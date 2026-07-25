@@ -1,0 +1,8 @@
+pyproject.toml
+src/venta/__init__.py
+src/venta/cli.py
+src/venta_cli.egg-info/PKG-INFO
+src/venta_cli.egg-info/SOURCES.txt
+src/venta_cli.egg-info/dependency_links.txt
+src/venta_cli.egg-info/entry_points.txt
+src/venta_cli.egg-info/top_level.txt

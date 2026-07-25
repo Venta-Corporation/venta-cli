@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "venta-cli"
+version = "0.1.0"
+description = "VENTA CLI - Mobile Dev & Database Admin Engine"
+authors = [
+    { name = "Winta Corporation" }
+]
+requires-python = ">=3.8"
+dependencies = []
+
+[project.scripts]
+venta = "venta.cli:main"

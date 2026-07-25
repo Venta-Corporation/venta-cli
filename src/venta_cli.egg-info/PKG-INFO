@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: venta-cli
+Version: 0.1.0
+Summary: VENTA CLI - Mobile Dev & Database Admin Engine
+Author: Winta Corporation
+Requires-Python: >=3.8
