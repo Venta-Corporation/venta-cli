@@ -9,11 +9,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 BANNER = r"""
- __   _____ _  _ _____  _      ___  _    ___ 
- \ \ / / __| \| |_   _|/_\    / __|| |  |_ _|
-  \ V /| _|| .` | | | / _ \  | (__ | |__ | | 
-   \_/ |___|_|\_| |_|/_/ \_\  \___||____|___|
-       Phantom Messaging Admin Console
+ __   _____ _  _ _____  _       ___  _    ___ 
+ \ \ / / __| \| |_   _|/_\     / __|| |  |_ _|
+  \ V /| _|| .` | | | / _ \   | (__ | |__ | | 
+   \_/ |___|_|\_| |_|/_/ \_\   \___||____|___|
+      || Phantom Messaging Admin Console ||
 """
 
 CONFIG_DIR = Path.home() / ".venta"
