@@ -160,6 +160,7 @@ def main():
     
 
     if not args.subcommand:
+        print(f"{GREEN}{BANNER}{RESET}")
         parser.print_help()
         sys.exit(1)
 
