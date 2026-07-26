@@ -8,12 +8,22 @@ import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+GREEN = "\033[92m"
+CYAN = "\033[96m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+RESET = "\033[0m"
+
+VERSION = "1.0.0"
+version=f"VENTA CLI v{VERSION}"
+
 BANNER = r"""
- __   _____ _  _ _____  _      ___  _    ___ 
+ __   _____ _  _ _____  _      ___  _    ___
  \ \ / / __| \| |_   _|/_\    / __|| |  |_ _|
-  \ V /| _|| .` | | | / _ \  | (__ | |__ | | 
+  \ V /| _|| .` | | | / _ \  | (__ | |__ | |
    \_/ |___|_|\_| |_|/_/ \_\  \___||____|___|
-      || Phantom Messaging Admin Console ||
+         Phantom Messaging Admin Console
+               VENTA CLI : v1.0.0                 
 """
 
 CONFIG_DIR = Path.home() / ".venta"
@@ -62,10 +72,10 @@ def firebase_login(api_key: str, email: str, password: str) -> dict:
     except HTTPError as e:
         body = json.loads(e.read().decode("utf-8"))
         error_msg = body.get("error", {}).get("message", e.reason)
-        print(f"\n[-] Auth Error: {error_msg}", file=sys.stderr)
+        print(f"\n{RED}[-] Auth Error: {error_msg}{RESET}", file=sys.stderr)
         sys.exit(1)
     except URLError as e:
-        print(f"\n[-] Network Error: {e.reason}", file=sys.stderr)
+        print(f"\n{RED}[-] Network Error: {e.reason}{RESET}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -86,21 +96,26 @@ def make_request(
         with urlopen(req) as response:
             body = response.read().decode("utf-8")
             parsed = json.loads(body)
-            print("\n[+] SUCCESS")
+            print(f"{GREEN}[+] SUCCESS{RESET}")
             print("----------------------------------------")
             print(json.dumps(parsed, indent=2))
             print("----------------------------------------\n")
     except HTTPError as e:
         error_body = e.read().decode("utf-8")
-        print(f"\n[-] HTTP ERROR {e.code}: {e.reason}", file=sys.stderr)
+        print(f"\n{RED}[-] HTTP ERROR {e.code}: {e.reason}{RESET}", file=sys.stderr)
         print(f"Details: {error_body}\n", file=sys.stderr)
     except URLError as e:
-        print(f"\n[-] CONNECTION ERROR: {e.reason}\n", file=sys.stderr)
-
-
+        print(f"\n{RED}[-] CONNECTION ERROR: {e.reason}{RESET}\n", file=sys.stderr)
+     
 def main():
+    print(f"{GREEN}{BANNER}{RESET}")
     parser = argparse.ArgumentParser(
         description="VENTA CLI - Mobile Dev & Database Admin Engine"
+    )
+    parser.add_argument(
+    "--version",
+    action="version",
+    version="VENTA CLI v1.0.0"
     )
     subparsers = parser.add_subparsers(
         dest="subcommand", help="Available modules"
@@ -141,9 +156,10 @@ def main():
     )
 
     args = parser.parse_args()
+ 
+    
 
     if not args.subcommand:
-        print(BANNER)
         parser.print_help()
         sys.exit(1)
 
@@ -159,7 +175,7 @@ def main():
             email = args.email or input("Enter Phantom Hub Email: ").strip()
             password = getpass.getpass("Enter Password: ").strip()
 
-            print("\n[*] Authenticating with Firebase...")
+            print(f"{YELLOW}[*] Authenticating with Firebase...{RESET}")
             res = firebase_login(api_key, email, password)
 
             save_config(
@@ -171,26 +187,25 @@ def main():
                     "uid": res["localId"],
                 }
             )
-            print(f"\n[+] Logged in successfully as {res['email']}!")
-            print(f"[+] User UID: {res['localId']}")
-            print(f"[+] Session token saved to {CONFIG_FILE}\n")
-
+            print(f"\n{GREEN}[+] Logged in successfully as {res['email']}!{RESET}")
+            print(f"{GREEN}[+] User UID: {res['localId']}{RESET}")
+            print(f"{GREEN}[+] Session token saved to {CONFIG_FILE}{RESET}")
         elif args.auth_action == "status":
             if config.get("id_token"):
-                print("\n[+] AUTHENTICATED")
+                print(f"\n{GREEN}[+] AUTHENTICATED{RESET}")
                 print("----------------------------------------")
                 print(f"Logged in as : {config.get('email')}")
                 print(f"User UID     : {config.get('uid')}")
                 print(f"Config File  : {CONFIG_FILE}")
                 print("----------------------------------------\n")
             else:
-                print(
-                    "\n[-] NOT LOGGED IN. Run 'venta auth login' to authenticate.\n"
-                )
-
+                print(  
+                "\n[-] NOT LOGGED IN. Run 'venta auth login' to authenticate.\n"  
+            )  
+             
         elif args.auth_action == "logout":
             clear_config()
-            print("\n[+] Logged out. Saved credentials cleared.\n")
+            print(f"\n{GREEN}[+] Logged out. Saved credentials cleared.{RESET}\n")
 
     # --- Handle DB Commands ---
     elif args.subcommand == "db":
@@ -225,8 +240,8 @@ def main():
             try:
                 data_dict = json.loads(args.data)
             except json.JSONDecodeError:
-                print(
-                    "[-] ERROR: Provided '--data' is not valid JSON.",
+                print( 
+                    f"{RED}[-] ERROR: Provided '--data' is not valid JSON.{RESET}",
                     file=sys.stderr,
                 )
                 sys.exit(1)
