@@ -23,7 +23,7 @@ BANNER = r"""
   \ V /| _|| .` | | | / _ \  | (__ | |__ | |
    \_/ |___|_|\_| |_|/_/ \_\  \___||____|___|
          Phantom Messaging Admin Console
-               VENTA CLI : v1.0.0                 
+              CLI VERSION : v1.0.0                 
 """
 
 CONFIG_DIR = Path.home() / ".venta"
