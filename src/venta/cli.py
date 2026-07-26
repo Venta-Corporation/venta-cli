@@ -108,7 +108,7 @@ def make_request(
         print(f"\n{RED}[-] CONNECTION ERROR: {e.reason}{RESET}\n", file=sys.stderr)
      
 def main():
-    print(f"{GREEN}{BANNER}{RESET}")
+    
     parser = argparse.ArgumentParser(
         description="VENTA CLI - Mobile Dev & Database Admin Engine"
     )
