@@ -95,21 +95,47 @@ def firebase_login(api_key: str, email: str, password: str) -> dict:
     )
 
     try:
-        with urlopen(req) as response:
+        print(f"{CYAN}[*] Connecting to Firebase Authentication...{RESET}")
+
+        with urlopen(req, timeout=15) as response:
             return json.loads(response.read().decode("utf-8"))
 
     except HTTPError as e:
         try:
             body = json.loads(e.read().decode("utf-8"))
-            error_msg = body.get("error", {}).get("message", e.reason)
+            error_msg = body.get("error", {}).get("message", "UNKNOWN_ERROR")
         except Exception:
-            error_msg = e.reason
+            error_msg = "UNKNOWN_AUTH_ERROR"
 
-        print(f"\n{RED}[-] Auth Error: {error_msg}{RESET}", file=sys.stderr)
+        print(f"\n{RED}[-] Firebase Authentication Failed{RESET}")
+        print(f"{YELLOW}Reason: {error_msg}{RESET}")
+
+        if error_msg in (
+            "INVALID_LOGIN_CREDENTIALS",
+            "EMAIL_NOT_FOUND",
+            "INVALID_PASSWORD"
+        ):
+            print("\nCheck that:")
+            print("  - The email exists in Firebase Authentication.")
+            print("  - The password belongs to that Firebase account.")
+            print("  - Email/Password sign-in is enabled.")
+
+        elif error_msg == "OPERATION_NOT_ALLOWED":
+            print("\nEmail/Password provider is disabled.")
+            print("Enable it in Firebase Authentication settings.")
+
+        elif error_msg == "API_KEY_INVALID":
+            print("\nCheck your Firebase Web API key.")
+
+        sys.exit(1)
+
+    except TimeoutError:
+        print(f"\n{RED}[-] Connection timed out after 15 seconds.{RESET}")
+        print("Check your internet connection and try again.")
         sys.exit(1)
 
     except URLError as e:
-        print(f"\n{RED}[-] Network Error: {e.reason}{RESET}", file=sys.stderr)
+        print(f"\n{RED}[-] Network Error: {e.reason}{RESET}")
         sys.exit(1)
 
 
