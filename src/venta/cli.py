@@ -1,150 +1,302 @@
 
 #!/usr/bin/env python3
+
 import argparse
 import getpass
 import json
 import os
-from pathlib import Path
 import sys
 import time
 import base64
 import hashlib
 import secrets
+import subprocess
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
+
+# =========================================================
+# VENTA CLI | PHANTOM HUB
+# =========================================================
+
+VERSION = "1.1.0"
+APP_NAME = "VENTA CLI"
+
+# ---------------------------------------------------------
+# FIREBASE APPLICATION CONFIGURATION
+# ---------------------------------------------------------
+
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyBWA-zRkPFH4svRjkMUO80TUdI9zIm5ICc",
+  authDomain: "phantom-messaging-a5bf0.firebaseapp.com",
+  databaseURL: "https://phantom-messaging-a5bf0-default-rtdb.firebaseio.com",
+  projectId: "phantom-messaging-a5bf0",
+  storageBucket: "phantom-messaging-a5bf0.firebasestorage.app",
+  messagingSenderId: "475147330421",
+  appId: "1:475147330421:web:6fe73f781a9dbf443ca93c",
+  measurementId: "G-1974SDM4VW"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+
+FIREBASE_API_KEY = "AIzaSyBWA-zRkPFH4svRjkMUO80TUdI9zIm5ICc"
+FIREBASE_PROJECT_ID = "phantom-messaging-a5bf0"
+FIREBASE_AUTH_DOMAIN = "phantom-messaging-a5bf0.firebaseapp.com"
+FIREBASE_DATABASE_URL = (
+    "https://phantom-messaging-a5bf0-default-rtdb.firebaseio.com"
+)
+FIREBASE_APP_ID = "1:475147330421:web:6fe73f781a9dbf443ca93c"
+FIREBASE_MESSAGING_SENDER_ID = "G-1974SDM4VW"
+
+# ---------------------------------------------------------
+# TERMINAL COLORS
+# ---------------------------------------------------------
 
 GREEN = "\033[92m"
 CYAN = "\033[96m"
 YELLOW = "\033[93m"
 RED = "\033[91m"
+BLUE = "\033[94m"
+WHITE = "\033[97m"
+DIM = "\033[2m"
 RESET = "\033[0m"
 
-VERSION = "1.0.0"
-version = f"VENTA CLI v{VERSION}"
+# ---------------------------------------------------------
+# CONFIGURATION STORAGE
+# ---------------------------------------------------------
+
+CONFIG_DIR = Path.home() / ".venta"
+CONFIG_FILE = CONFIG_DIR / "config.json"
+
+# ---------------------------------------------------------
+# BANNER
+# ---------------------------------------------------------
 
 BANNER = r"""
  __   _____ _  _ _____  _      ___  _    ___
  \ \ / / __| \| |_   _|/_\    / __|| |  |_ _|
   \ V /| _|| .` | | | / _ \  | (__ | |__ | |
    \_/ |___|_|\_| |_|/_/ \_\  \___||____|___|
-         Phantom Messaging Admin Console
-              CLI VERSION : v1.0.0
+
+       PHANTOM MESSAGING ADMIN CONSOLE
+                  VENTA CLI
 """
 
-CONFIG_DIR = Path.home() / ".venta"
-CONFIG_FILE = CONFIG_DIR / "config.json"
 
-FIREBASE_DB = (
-    "https://phantom-messaging-a5bf0-default-rtdb.firebaseio.com"
-)
+# =========================================================
+# UI UTILITIES
+# =========================================================
+
+def line():
+    print(f"{DIM}{'─' * 56}{RESET}")
+
+
+def success(message):
+    print(f"{GREEN}[+] {message}{RESET}")
+
+
+def info(message):
+    print(f"{CYAN}[*] {message}{RESET}")
+
+
+def warning(message):
+    print(f"{YELLOW}[!] {message}{RESET}")
+
+
+def error(message):
+    print(f"{RED}[-] {message}{RESET}")
+
+
+def title(text):
+    print()
+    line()
+    print(f"{CYAN}{text.center(56)}{RESET}")
+    line()
+
+
+def pause():
+    try:
+        input("\nPress Enter to continue...")
+    except (KeyboardInterrupt, EOFError):
+        pass
 
 
 # =========================================================
-# CONFIGURATION
+# CONFIGURATION MANAGEMENT
 # =========================================================
 
-def get_config() -> dict:
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            return {}
-    return {}
+def get_config():
+    if not CONFIG_FILE.exists():
+        return {}
+
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
+
+        return data if isinstance(data, dict) else {}
+
+    except (json.JSONDecodeError, OSError):
+        warning("Configuration file could not be read.")
+        return {}
 
 
-def save_config(data: dict) -> None:
+def save_config(data):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    current = get_config()
-    current.update(data)
 
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(current, f, indent=2)
+    config = get_config()
+    config.update(data)
 
-    os.chmod(CONFIG_FILE, 0o600)
+    with open(CONFIG_FILE, "w", encoding="utf-8") as file:
+        json.dump(config, file, indent=2)
+
+    try:
+        os.chmod(CONFIG_FILE, 0o600)
+    except OSError:
+        pass
 
 
-def clear_config() -> None:
+def clear_config():
     if CONFIG_FILE.exists():
         CONFIG_FILE.unlink()
 
 
-# =========================================================
-# FIREBASE AUTHENTICATION
-# =========================================================
+def get_api_key(config=None):
+    config = config or get_config()
 
-def firebase_login(api_key: str, email: str, password: str) -> dict:
-    """Authenticates against Firebase Auth REST API."""
-
-    url = (
-        "https://identitytoolkit.googleapis.com/v1/"
-        f"accounts:signInWithPassword?key={api_key}"
+    return (
+        config.get("api_key")
+        or (FIREBASE_API_KEY if FIREBASE_API_KEY != "YOUR_FIREBASE_WEB_API_KEY" else "")
     )
 
-    payload = json.dumps({
+
+def get_database_url(config=None):
+    config = config or get_config()
+
+    return (
+        config.get("db_url")
+        or FIREBASE_DATABASE_URL
+    )
+
+
+# =========================================================
+# NETWORK UTILITIES
+# =========================================================
+
+def http_json(url, method="GET", data=None, timeout=20, headers=None):
+    request_headers = {
+        "User-Agent": "VENTA-CLI/" + VERSION
+    }
+
+    if headers:
+        request_headers.update(headers)
+
+    payload = None
+
+    if data is not None:
+        payload = json.dumps(data).encode("utf-8")
+        request_headers["Content-Type"] = "application/json"
+
+    request = Request(
+        url,
+        data=payload,
+        headers=request_headers,
+        method=method
+    )
+
+    with urlopen(request, timeout=timeout) as response:
+        raw = response.read().decode("utf-8")
+
+        if not raw:
+            return None
+
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return raw
+
+
+def firebase_error_message(exc):
+    try:
+        body = json.loads(exc.read().decode("utf-8"))
+        return body.get("error", {}).get("message", str(exc))
+    except Exception:
+        return str(exc)
+
+
+# =========================================================
+# AUTHENTICATION
+# =========================================================
+
+def firebase_login(api_key, email, password):
+    url = (
+        "https://identitytoolkit.googleapis.com/v1/"
+        "accounts:signInWithPassword"
+        f"?key={quote(api_key)}"
+    )
+
+    payload = {
         "email": email,
         "password": password,
         "returnSecureToken": True
-    }).encode("utf-8")
-
-    req = Request(
-        url,
-        data=payload,
-        headers={"Content-Type": "application/json"}
-    )
+    }
 
     try:
-        print(f"{CYAN}[*] Connecting to Firebase Authentication...{RESET}")
+        info("Connecting to Firebase Authentication...")
 
-        with urlopen(req, timeout=15) as response:
-            return json.loads(response.read().decode("utf-8"))
+        return http_json(
+            url,
+            method="POST",
+            data=payload,
+            timeout=15
+        )
 
-    except HTTPError as e:
-        try:
-            body = json.loads(e.read().decode("utf-8"))
-            error_msg = body.get("error", {}).get("message", "UNKNOWN_ERROR")
-        except Exception:
-            error_msg = "UNKNOWN_AUTH_ERROR"
+    except HTTPError as exc:
+        message = firebase_error_message(exc)
+        error(f"Authentication failed: {message}")
 
-        print(f"\n{RED}[-] Firebase Authentication Failed{RESET}")
-        print(f"{YELLOW}Reason: {error_msg}{RESET}")
-
-        if error_msg in (
+        if message in (
             "INVALID_LOGIN_CREDENTIALS",
             "EMAIL_NOT_FOUND",
             "INVALID_PASSWORD"
         ):
-            print("\nCheck that:")
-            print("  - The email exists in Firebase Authentication.")
-            print("  - The password belongs to that Firebase account.")
-            print("  - Email/Password sign-in is enabled.")
+            print("\nCheck your Firebase email and password.")
 
-        elif error_msg == "OPERATION_NOT_ALLOWED":
-            print("\nEmail/Password provider is disabled.")
-            print("Enable it in Firebase Authentication settings.")
+        elif message == "OPERATION_NOT_ALLOWED":
+            print("Email/Password authentication is disabled.")
 
-        elif error_msg == "API_KEY_INVALID":
-            print("\nCheck your Firebase Web API key.")
+        elif message == "API_KEY_INVALID":
+            print("The Firebase Web API key is invalid.")
 
-        sys.exit(1)
+        return None
 
     except TimeoutError:
-        print(f"\n{RED}[-] Connection timed out after 15 seconds.{RESET}")
-        print("Check your internet connection and try again.")
-        sys.exit(1)
+        error("Firebase connection timed out.")
+        return None
 
-    except URLError as e:
-        print(f"\n{RED}[-] Network Error: {e.reason}{RESET}")
-        sys.exit(1)
+    except URLError as exc:
+        error(f"Network error: {exc.reason}")
+        return None
+
+    except Exception as exc:
+        error(f"Unexpected authentication error: {exc}")
+        return None
 
 
-def firebase_refresh(refresh_token: str, api_key: str) -> dict:
-    """Refresh Firebase authentication token."""
-
+def firebase_refresh(refresh_token, api_key):
     url = (
-        "https://securetoken.googleapis.com/v1/token?"
-        f"key={api_key}"
+        "https://securetoken.googleapis.com/v1/token"
+        f"?key={quote(api_key)}"
     )
 
     payload = urlencode({
@@ -152,37 +304,43 @@ def firebase_refresh(refresh_token: str, api_key: str) -> dict:
         "refresh_token": refresh_token
     }).encode("utf-8")
 
-    req = Request(
+    request = Request(
         url,
         data=payload,
-        headers={"Content-Type": "application/x-www-form-urlencoded"}
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "VENTA-CLI/" + VERSION
+        }
     )
 
     try:
-        with urlopen(req) as response:
+        with urlopen(request, timeout=15) as response:
             return json.loads(response.read().decode("utf-8"))
+
+    except HTTPError as exc:
+        warning(f"Token refresh failed: {firebase_error_message(exc)}")
+        return {}
 
     except Exception:
         return {}
 
 
-def refresh_saved_auth() -> dict:
+def refresh_saved_auth():
     config = get_config()
 
-    if not config.get("refresh_token") or not config.get("api_key"):
+    refresh_token = config.get("refresh_token")
+    api_key = get_api_key(config)
+
+    if not refresh_token or not api_key:
         return config
 
-    result = firebase_refresh(
-        config["refresh_token"],
-        config["api_key"]
-    )
+    result = firebase_refresh(refresh_token, api_key)
 
-    if result.get("id_token"):
+    if result.get("access_token"):
         save_config({
-            "id_token": result["id_token"],
+            "id_token": result["access_token"],
             "refresh_token": result.get(
-                "refresh_token",
-                config.get("refresh_token")
+                "refresh_token", refresh_token
             )
         })
 
@@ -191,114 +349,186 @@ def refresh_saved_auth() -> dict:
     return config
 
 
-# =========================================================
-# ORIGINAL DATABASE REQUEST FUNCTION
-# =========================================================
+def auth_login(args):
+    config = get_config()
 
-def make_request(
-    url: str,
-    method: str = "GET",
-    data: dict = None,
-    auth: str = None
-) -> None:
+    api_key = args.api_key or get_api_key(config)
 
-    full_url = f"{url}?auth={auth}" if auth else url
-    headers = {"User-Agent": "VentaCLI/1.0"}
-    payload = None
+    if not api_key:
+        api_key = input("Firebase Web API Key: ").strip()
 
-    if data is not None:
-        payload = json.dumps(data).encode("utf-8")
-        headers["Content-Type"] = "application/json"
+    email = args.email or input("Email: ").strip()
 
-    req = Request(
-        full_url,
-        data=payload,
-        headers=headers,
-        method=method
+    password = getpass.getpass("Password: ")
+
+    result = firebase_login(
+        api_key,
+        email,
+        password
     )
 
-    try:
-        with urlopen(req) as response:
-            body = response.read().decode("utf-8")
-            parsed = json.loads(body)
+    if not result:
+        return
 
-            print(f"{GREEN}[+] SUCCESS{RESET}")
-            print("----------------------------------------")
-            print(json.dumps(parsed, indent=2))
-            print("----------------------------------------\n")
+    save_config({
+        "api_key": api_key,
+        "id_token": result["idToken"],
+        "refresh_token": result["refreshToken"],
+        "email": result["email"],
+        "uid": result["localId"],
+        "db_url": FIREBASE_DATABASE_URL
+    })
 
-    except HTTPError as e:
-        error_body = e.read().decode("utf-8")
-        print(
-            f"\n{RED}[-] HTTP ERROR {e.code}: {e.reason}{RESET}",
-            file=sys.stderr
-        )
-        print(f"Details: {error_body}\n", file=sys.stderr)
+    title("AUTHENTICATION SUCCESSFUL")
+    success(f"Logged in as {result['email']}")
+    print(f"UID       : {result['localId']}")
+    print(f"Config    : {CONFIG_FILE}")
 
-    except URLError as e:
-        print(
-            f"\n{RED}[-] CONNECTION ERROR: {e.reason}{RESET}\n",
-            file=sys.stderr
-        )
+
+def auth_status():
+    config = get_config()
+
+    title("AUTHENTICATION STATUS")
+
+    if config.get("id_token"):
+        success("Authenticated")
+        print(f"Email : {config.get('email', 'Unknown')}")
+        print(f"UID   : {config.get('uid', 'Unknown')}")
+        print(f"File  : {CONFIG_FILE}")
+    else:
+        warning("Not authenticated.")
+        print("Run: venta auth login")
+
+
+def auth_logout():
+    clear_config()
+    success("Logged out. Local configuration removed.")
 
 
 # =========================================================
-# PHANTOM HUB MESSAGING ENGINE
+# FIREBASE DATABASE ENGINE
 # =========================================================
 
-def db_request(path, method="GET", data=None, auth=None):
-    """Internal Firebase REST request for messaging."""
+def firebase_db_request(path, method="GET", data=None, auth=None,
+                        db_url=None, timeout=20):
 
+    db_url = (db_url or FIREBASE_DATABASE_URL).rstrip("/")
     path = path.strip("/")
-    url = f"{FIREBASE_DB}/{path}.json"
+
+    endpoint = f"{db_url}/{path}.json" if path else f"{db_url}/.json"
 
     if auth:
-        url += f"?auth={auth}"
-
-    payload = None
-
-    headers = {
-        "User-Agent": "VentaCLI/1.0",
-        "Content-Type": "application/json"
-    }
-
-    if data is not None:
-        payload = json.dumps(data).encode("utf-8")
-
-    req = Request(
-        url,
-        data=payload,
-        headers=headers,
-        method=method
-    )
+        endpoint += "?" + urlencode({"auth": auth})
 
     try:
-        with urlopen(req, timeout=20) as response:
-            raw = response.read().decode("utf-8")
-            return json.loads(raw) if raw else None
+        return http_json(
+            endpoint,
+            method=method,
+            data=data,
+            timeout=timeout
+        )
 
-    except HTTPError as e:
+    except HTTPError as exc:
+        error(f"Firebase HTTP {exc.code}: {firebase_error_message(exc)}")
+        return None
+
+    except URLError as exc:
+        error(f"Connection error: {exc.reason}")
+        return None
+
+    except TimeoutError:
+        error("Firebase request timed out.")
+        return None
+
+    except Exception as exc:
+        error(f"Database request failed: {exc}")
+        return None
+
+
+def db_command(args):
+    config = get_config()
+
+    db_url = args.db_url or get_database_url(config)
+    auth_token = args.auth or config.get("id_token")
+
+    if not db_url:
+        error("Database URL is missing.")
+        return
+
+    path = args.path
+
+    if args.action in ("set", "push"):
+        if args.data is None:
+            error("--data is required for this action.")
+            return
+
         try:
-            details = e.read().decode("utf-8")
-        except Exception:
-            details = str(e)
+            data = json.loads(args.data)
+        except json.JSONDecodeError:
+            error("Invalid JSON supplied to --data.")
+            return
 
-        print(f"{RED}Firebase HTTP Error {e.code}: {details}{RESET}")
-        return None
+    else:
+        data = None
 
-    except URLError as e:
-        print(f"{RED}Firebase connection error: {e.reason}{RESET}")
-        return None
+    methods = {
+        "get": "GET",
+        "set": "PUT",
+        "push": "POST",
+        "delete": "DELETE"
+    }
 
-    except Exception as e:
-        print(f"{RED}Request error: {e}{RESET}")
-        return None
+    title(f"DATABASE {args.action.upper()}")
+
+    result = firebase_db_request(
+        path,
+        method=methods[args.action],
+        data=data,
+        auth=auth_token,
+        db_url=db_url
+    )
+
+    if result is not None:
+        success("Request completed.")
+        print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-def get_chat_id(uid1, uid2):
-    """Generate the same sorted chat ID used by Phantom Hub."""
+# =========================================================
+# CRYPTO DEPENDENCY
+# =========================================================
 
-    return "_".join(sorted([str(uid1), str(uid2)]))
+def ensure_crypto():
+    try:
+        from Crypto.Cipher import AES
+        return True
+
+    except ImportError:
+        warning("PyCryptodome is not installed.")
+
+        answer = input("Install it automatically now? [Y/n]: ").strip().lower()
+
+        if answer in ("n", "no"):
+            return False
+
+        info("Installing PyCryptodome...")
+
+        try:
+            subprocess.check_call([
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "pycryptodome"
+            ])
+
+            from Crypto.Cipher import AES
+            success("PyCryptodome installed.")
+            return True
+
+        except Exception as exc:
+            error(f"Dependency installation failed: {exc}")
+            print(f"Install manually: {sys.executable} -m pip install pycryptodome")
+            return False
 
 
 # =========================================================
@@ -306,11 +536,6 @@ def get_chat_id(uid1, uid2):
 # =========================================================
 
 def evp_bytes_to_key(password, salt, key_len=32, iv_len=16):
-    """
-    OpenSSL-compatible EVP_BytesToKey using MD5.
-    Used for compatibility with CryptoJS passphrase AES format.
-    """
-
     password = password.encode("utf-8")
     result = b""
     previous = b""
@@ -323,7 +548,7 @@ def evp_bytes_to_key(password, salt, key_len=32, iv_len=16):
 
 
 def pkcs7_pad(data, block_size=16):
-    padding = block_size - (len(data) % block_size)
+    padding = block_size - len(data) % block_size
     return data + bytes([padding]) * padding
 
 
@@ -343,62 +568,72 @@ def pkcs7_unpad(data):
 
 
 def aes_encrypt(text, password):
-    """
-    CryptoJS AES passphrase-compatible encryption.
-    Requires: pycryptodome
-    """
-
     from Crypto.Cipher import AES
 
     salt = secrets.token_bytes(8)
     key, iv = evp_bytes_to_key(password, salt)
 
     cipher = AES.new(key, AES.MODE_CBC, iv)
+
     encrypted = cipher.encrypt(
         pkcs7_pad(text.encode("utf-8"))
     )
 
-    result = b"Salted__" + salt + encrypted
-    return base64.b64encode(result).decode("utf-8")
+    return base64.b64encode(
+        b"Salted__" + salt + encrypted
+    ).decode("utf-8")
 
 
 def aes_decrypt(ciphertext, password):
-    """
-    CryptoJS AES passphrase-compatible decryption.
-    """
-
     from Crypto.Cipher import AES
 
     raw = base64.b64decode(ciphertext)
 
-    if raw[:8] == b"Salted__":
-        salt = raw[8:16]
-        encrypted = raw[16:]
-    else:
-        raise ValueError("Unsupported encrypted message format")
+    if raw[:8] != b"Salted__":
+        raise ValueError("Unsupported encryption format")
+
+    salt = raw[8:16]
+    encrypted = raw[16:]
 
     key, iv = evp_bytes_to_key(password, salt)
 
     cipher = AES.new(key, AES.MODE_CBC, iv)
+
     decrypted = cipher.decrypt(encrypted)
 
     return pkcs7_unpad(decrypted).decode("utf-8")
 
 
 # =========================================================
-# USER MANAGEMENT
+# PHANTOM HUB
 # =========================================================
 
-def get_users(auth_token):
-    users = db_request("global_users", auth=auth_token)
-
-    if not isinstance(users, dict):
-        return {}
-
-    return users
+def get_chat_id(uid1, uid2):
+    return "_".join(sorted([str(uid1), str(uid2)]))
 
 
-def user_display_name(uid, profile):
+def messaging_request(path, method="GET", data=None, config=None):
+    config = config or get_config()
+
+    return firebase_db_request(
+        path,
+        method=method,
+        data=data,
+        auth=config.get("id_token"),
+        db_url=FIREBASE_DATABASE_URL
+    )
+
+
+def get_users(config):
+    result = messaging_request(
+        "global_users",
+        config=config
+    )
+
+    return result if isinstance(result, dict) else {}
+
+
+def display_name(uid, profile):
     if not isinstance(profile, dict):
         return str(uid)
 
@@ -407,123 +642,117 @@ def user_display_name(uid, profile):
         or profile.get("name")
         or profile.get("displayName")
         or profile.get("email")
-        or uid
+        or str(uid)
     )
 
 
-def explore_users(auth_token, my_uid):
-    users = get_users(auth_token)
+def explore_users(config):
+    users = get_users(config)
+    my_uid = config.get("uid")
 
-    if not users:
-        print(f"{YELLOW}No users found.{RESET}")
-        return []
+    available = [
+        (uid, profile)
+        for uid, profile in users.items()
+        if uid != my_uid
+    ]
 
-    available = []
-
-    print(f"\n{CYAN}========== PHANTOM HUB USERS =========={RESET}\n")
-
-    for uid, profile in users.items():
-        if uid == my_uid:
-            continue
-
-        name = user_display_name(uid, profile)
-        email = profile.get("email", "") if isinstance(profile, dict) else ""
-
-        available.append((uid, profile))
-
-        print(f"{GREEN}[+] {name}{RESET}")
-        print(f"    UID: {uid}")
-
-        if email:
-            print(f"    Email: {email}")
-
-        print("----------------------------------------")
+    title("PHANTOM HUB USERS")
 
     if not available:
-        print("No other users available.")
+        warning("No other users found.")
+        return []
+
+    for index, (uid, profile) in enumerate(available, start=1):
+        print(f"{GREEN}[{index}]{RESET} {display_name(uid, profile)}")
+        print(f"    UID: {uid}")
+        line()
 
     return available
 
 
 # =========================================================
-# MESSAGE HANDLING
+# CHAT MESSAGES
 # =========================================================
 
-def get_messages(chat_id, auth_token):
-    messages = db_request(
+def get_messages(chat_id, config):
+    result = messaging_request(
         f"messages/{chat_id}",
-        auth=auth_token
+        config=config
     )
 
-    if not isinstance(messages, dict):
+    if not isinstance(result, dict):
         return []
 
-    result = []
+    messages = []
 
-    for key, message in messages.items():
+    for key, message in result.items():
         if isinstance(message, dict):
             message["_key"] = key
-            result.append(message)
+            messages.append(message)
 
-    result.sort(key=lambda item: item.get("time", 0))
+    messages.sort(key=lambda msg: msg.get("time", 0))
+    return messages
 
-    return result
 
+def render_messages(chat_id, messages, my_uid):
+    title("CONVERSATION")
 
-def display_messages(chat_id, messages, my_uid):
-    print(f"\n{CYAN}========== CONVERSATION =========={RESET}\n")
+    if not messages:
+        print(f"{DIM}No messages in this conversation.{RESET}")
+        return
 
     for message in messages:
-        sender = message.get("sender", "unknown")
+        sender = message.get("sender")
         timestamp = message.get("time", 0)
-        message_type = message.get("type", "text")
-        content = message.get("content", "")
 
         try:
-            timestamp_text = time.strftime(
-                "%H:%M",
+            time_text = time.strftime(
+                "%d %b %H:%M",
                 time.localtime(timestamp / 1000)
             )
         except Exception:
-            timestamp_text = "--:--"
+            time_text = "Unknown time"
 
-        if sender == my_uid:
-            label = "YOU"
+        label = "YOU" if sender == my_uid else "THEM"
+
+        if message.get("type", "text") != "text":
+            content = "[Unsupported message type]"
         else:
-            label = "THEM"
-
-        if message_type == "text":
             try:
-                text = aes_decrypt(content, chat_id)
+                content = aes_decrypt(
+                    message.get("content", ""),
+                    chat_id
+                )
             except Exception:
-                text = "[Unable to decrypt message]"
+                content = "[Unable to decrypt message]"
 
-        else:
-            text = f"[Unsupported message type: {message_type}]"
-
-        print(f"{YELLOW}[{timestamp_text}] {label}{RESET}")
-        print(text)
-        print("----------------------------------------")
+        print(f"{YELLOW}{label} | {time_text}{RESET}")
+        print(content)
+        line()
 
 
-def send_message(chat_id, recipient_uid, message_text, config):
+def send_message(chat_id, recipient_uid, text, config):
     my_uid = config.get("uid")
-    auth_token = config.get("id_token")
 
-    if not message_text.strip():
+    if not text.strip():
         return False
 
-    encrypted = aes_encrypt(message_text, chat_id)
     timestamp = int(time.time() * 1000)
 
-    # Ensure chat exists
-    chat_data = db_request(
+    try:
+        encrypted = aes_encrypt(text, chat_id)
+    except Exception as exc:
+        error(f"Encryption error: {exc}")
+        return False
+
+    # Check whether chat exists.
+    chat = messaging_request(
         f"chats/{chat_id}",
-        auth=auth_token
+        config=config
     )
 
-    if not chat_data:
-        chat_data = {
+    if not chat:
+        chat = {
             "users": {
                 my_uid: True,
                 recipient_uid: True
@@ -531,15 +760,18 @@ def send_message(chat_id, recipient_uid, message_text, config):
             "createdAt": timestamp
         }
 
-        db_request(
+        created = messaging_request(
             f"chats/{chat_id}",
             method="PUT",
-            data=chat_data,
-            auth=auth_token
+            data=chat,
+            config=config
         )
 
-    # Store message
-    message_data = {
+        if created is None:
+            warning("Unable to initialize chat.")
+            return False
+
+    message = {
         "sender": my_uid,
         "type": "text",
         "content": encrypted,
@@ -547,28 +779,45 @@ def send_message(chat_id, recipient_uid, message_text, config):
         "status": "sent"
     }
 
-    db_request(
+    result = messaging_request(
         f"messages/{chat_id}",
         method="POST",
-        data=message_data,
-        auth=auth_token
+        data=message,
+        config=config
     )
 
-    # Update metadata
+    if result is None:
+        error("Message could not be stored.")
+        return False
+
+    # Read existing metadata to preserve unread counters.
+    current_meta = messaging_request(
+        f"chat_meta/{chat_id}",
+        config=config
+    )
+
+    unread = {}
+
+    if isinstance(current_meta, dict):
+        unread = current_meta.get("unread", {})
+
+    if not isinstance(unread, dict):
+        unread = {}
+
+    unread[my_uid] = 0
+    unread[recipient_uid] = unread.get(recipient_uid, 0) + 1
+
     metadata = {
         "lastMessage": encrypted,
         "lastTime": timestamp,
-        "unread": {
-            my_uid: 0,
-            recipient_uid: 1
-        }
+        "unread": unread
     }
 
-    db_request(
+    messaging_request(
         f"chat_meta/{chat_id}",
         method="PATCH",
         data=metadata,
-        auth=auth_token
+        config=config
     )
 
     return True
@@ -578,142 +827,108 @@ def send_message(chat_id, recipient_uid, message_text, config):
 # CHAT SESSION
 # =========================================================
 
-def open_conversation(my_uid, recipient_uid, recipient_name, config):
-    auth_token = config.get("id_token")
+def chat_session(my_uid, recipient_uid, recipient_name, config):
     chat_id = get_chat_id(my_uid, recipient_uid)
 
-    print(f"\n{CYAN}Opening conversation with {recipient_name}{RESET}")
-    print(f"Chat ID: {chat_id}")
-    print("Type /exit to leave.")
-    print("Type /refresh to reload messages.\n")
+    title(f"CHAT WITH {recipient_name}")
 
-    messages = get_messages(chat_id, auth_token)
-    display_messages(chat_id, messages, my_uid)
+    print("Commands: /refresh  /help  /exit")
+
+    messages = get_messages(chat_id, config)
+    render_messages(chat_id, messages, my_uid)
 
     while True:
         try:
-            message_text = input(f"{GREEN}You > {RESET}").strip()
+            text = input(f"{GREEN}You > {RESET}").strip()
 
         except (KeyboardInterrupt, EOFError):
             print("\nLeaving conversation.")
             break
 
-        if not message_text:
+        if not text:
             continue
 
-        if message_text == "/exit":
+        if text == "/exit":
             break
 
-        if message_text == "/refresh":
-            messages = get_messages(chat_id, auth_token)
-            display_messages(chat_id, messages, my_uid)
+        if text == "/help":
+            print("\n/refresh  Reload messages")
+            print("/help     Show commands")
+            print("/exit     Leave conversation")
             continue
 
-        if message_text == "/help":
-            print("\nCommands:")
-            print("  /refresh - Reload conversation")
-            print("  /exit    - Return to messaging menu")
-            print("  /help    - Show commands\n")
+        if text == "/refresh":
+            config = refresh_saved_auth()
+            messages = get_messages(chat_id, config)
+            render_messages(chat_id, messages, my_uid)
             continue
 
-        if send_message(chat_id, recipient_uid, message_text, config):
-            print(f"{GREEN}[+] Message sent.{RESET}")
+        if send_message(chat_id, recipient_uid, text, config):
+            success("Message sent.")
         else:
-            print(f"{RED}[-] Message could not be sent.{RESET}")
-
-
-
-def ensure_crypto():
-    try:
-        from Crypto.Cipher import AES
-        print(f"{GREEN}[+] Encryption library detected.{RESET}")
-        return True
-
-    except ImportError:
-        print(f"{YELLOW}[*] Encryption library not found.{RESET}")
-        print("[*] Installing PyCryptodome automatically...")
-
-        import subprocess
-
-        try:
-            subprocess.check_call([
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "pycryptodome"
-            ])
-
-            from Crypto.Cipher import AES
-            print(f"{GREEN}[+] Encryption library installed successfully.{RESET}")
-            return True
-
-        except Exception as e:
-            print(f"{RED}[-] Installation failed: {e}{RESET}")
-            print("Install it manually using:")
-            print("python -m pip install pycryptodome")
-            return False
+            warning("Message sending failed.")
 
 
 # =========================================================
-# MESSAGING MENU
+# MESSAGING MODULE MENU
 # =========================================================
 
 def messaging_menu():
-
     if not ensure_crypto():
         return
 
-    config = refresh_saved_auth() 
- 
+    config = refresh_saved_auth()
+
     if not config.get("id_token") or not config.get("uid"):
-        print(f"{RED}[-] Please log in first: venta auth login{RESET}")
+        warning("Authentication required.")
+        print("Run: venta auth login")
         return
 
     my_uid = config["uid"]
 
     while True:
-        print(f"\n{CYAN}========== PHANTOM MESSAGING =========={RESET}")
-        print("1. Explore Users")
-        print("2. Open Conversation")
-        print("3. Refresh Firebase Connection")
-        print("4. Logout")
-        print("5. Exit Messaging")
-        print("----------------------------------------")
+        title("PHANTOM MESSAGING")
+
+        print("  1. Explore Users")
+        print("  2. Open Conversation")
+        print("  3. Refresh Firebase Session")
+        print("  4. Logout")
+        print("  5. Return")
+        line()
 
         try:
-            choice = input("Select option: ").strip()
+            choice = input("VENTA > ").strip()
 
         except (KeyboardInterrupt, EOFError):
-            print("\nExiting messaging.")
+            print()
             return
 
         if choice == "1":
-            explore_users(config["id_token"], my_uid)
+            explore_users(config)
 
         elif choice == "2":
-            users = explore_users(config["id_token"], my_uid)
+            users = explore_users(config)
 
             if not users:
                 continue
 
             try:
-                selection = int(input("\nEnter user number: "))
-            except ValueError:
-                print(f"{RED}Invalid selection.{RESET}")
+                selection = int(input("\nSelect user number: "))
+            except (ValueError, EOFError):
+                warning("Invalid selection.")
                 continue
 
-            if selection < 1 or selection > len(users):
-                print(f"{RED}Invalid user number.{RESET}")
+            if not 1 <= selection <= len(users):
+                warning("Selection out of range.")
                 continue
 
-            recipient_uid, profile = users[selection - 1]
-            recipient_name = user_display_name(recipient_uid, profile)
+            uid, profile = users[selection - 1]
+            name = display_name(uid, profile)
 
-            open_conversation(
+            chat_session(
                 my_uid,
-                recipient_uid,
-                recipient_name,
+                uid,
+                name,
                 config
             )
 
@@ -721,265 +936,146 @@ def messaging_menu():
             config = refresh_saved_auth()
 
             if config.get("id_token"):
-                print(f"{GREEN}[+] Firebase connection refreshed.{RESET}")
+                success("Session refreshed.")
             else:
-                print(f"{YELLOW}[-] Refresh failed. Please log in again.{RESET}")
+                warning("Unable to refresh. Please log in again.")
 
         elif choice == "4":
-            clear_config()
-            print(f"{GREEN}[+] Logged out.{RESET}")
+            auth_logout()
             return
 
         elif choice == "5":
             return
 
         else:
-            print(f"{RED}Invalid option.{RESET}")
+            warning("Invalid menu option.")
 
 
 # =========================================================
-# MAIN CLI
+# ARGUMENT PARSER
 # =========================================================
 
-def main():
-
+def build_parser():
     parser = argparse.ArgumentParser(
-        description="VENTA CLI - Mobile Dev & Database Admin Engine"
+        prog="venta",
+        description="VENTA CLI | Phantom Hub"
     )
 
     parser.add_argument(
         "--version",
         action="version",
-        version="VENTA CLI v1.0.0"
+        version=f"VENTA CLI v{VERSION}"
     )
 
     subparsers = parser.add_subparsers(
-        dest="subcommand",
-        help="Available modules"
+        dest="subcommand"
     )
 
-    # -----------------------------------------------------
-    # AUTH SUBCOMMAND
-    # -----------------------------------------------------
-
+    # AUTH
     auth_parser = subparsers.add_parser(
         "auth",
-        help="Firebase User Authentication"
+        help="Authentication tools"
     )
 
     auth_sub = auth_parser.add_subparsers(
-        dest="auth_action",
-        help="Auth Actions"
+        dest="auth_action"
     )
 
-    login_p = auth_sub.add_parser(
+    login_parser = auth_sub.add_parser(
         "login",
-        help="Log in with email & password"
+        help="Sign in to Phantom Hub"
     )
 
-    login_p.add_argument("--api-key", help="Firebase Web API Key")
-    login_p.add_argument("--email", help="User Email")
+    login_parser.add_argument(
+        "--api-key",
+        help="Firebase Web API key"
+    )
+
+    login_parser.add_argument(
+        "--email",
+        help="Account email"
+    )
 
     auth_sub.add_parser(
         "status",
-        help="Show current authentication status"
+        help="Show login status"
     )
 
     auth_sub.add_parser(
         "logout",
-        help="Clear saved credentials"
+        help="Sign out"
     )
 
-    # -----------------------------------------------------
-    # DB SUBCOMMAND
-    # -----------------------------------------------------
-
+    # DATABASE
     db_parser = subparsers.add_parser(
         "db",
-        help="Firebase Realtime Database engine"
+        help="Firebase database operations"
     )
 
     db_parser.add_argument(
         "action",
-        choices=["get", "set", "push", "delete"],
-        help="CRUD action to perform"
+        choices=["get", "set", "push", "delete"]
     )
 
     db_parser.add_argument(
         "--db-url",
-        help="Firebase Database URL"
+        help="Database URL"
     )
 
     db_parser.add_argument(
         "--path",
         default="/",
-        help="Database node path"
+        help="Database path"
     )
 
     db_parser.add_argument(
         "--data",
-        help="JSON string data for set or push"
+        help="JSON data"
     )
 
     db_parser.add_argument(
         "--auth",
-        help="Override stored token"
+        help="Override authentication token"
     )
 
-    # -----------------------------------------------------
-    # MESSAGING SUBCOMMAND
-    # -----------------------------------------------------
-
+    # MESSAGING
     subparsers.add_parser(
         "messaging",
-        help="Open Phantom Hub messaging"
+        help="Launch Phantom Messaging"
     )
 
+    return parser
+
+
+# =========================================================
+# MAIN
+# =========================================================
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
-    # -----------------------------------------------------
-    # NO SUBCOMMAND
-    # -----------------------------------------------------
-
     if not args.subcommand:
-        print(f"{GREEN}{BANNER}{RESET}")
+        print(f"{CYAN}{BANNER}{RESET}")
         parser.print_help()
-        sys.exit(1)
-
-    config = get_config()
-
-    # -----------------------------------------------------
-    # AUTH COMMANDS
-    # -----------------------------------------------------
+        return
 
     if args.subcommand == "auth":
 
         if args.auth_action == "login":
-
-            api_key = args.api_key or config.get("api_key")
-
-            if not api_key:
-                api_key = input(
-                    "Enter Firebase Web API Key: "
-            ).strip()
-
-            email = args.email or input(
-                "Enter Phantom Hub Email: "
-            ).strip()
-
-            password = getpass.getpass(
-                "Enter Password: "
-            ).strip()
-
-            print(f"{YELLOW}[*] Authenticating with Firebase...{RESET}")
-
-            res = firebase_login(api_key, email, password)
-
-            save_config({
-                "api_key": api_key,
-                "id_token": res["idToken"],
-                "refresh_token": res["refreshToken"],
-                "email": res["email"],
-                "uid": res["localId"]
-            })
-
-            print(f"\n{GREEN}[+] Logged in successfully as {res['email']}!{RESET}")
-            print(f"{GREEN}[+] User UID: {res['localId']}{RESET}")
-            print(f"{GREEN}[+] Session token saved to {CONFIG_FILE}{RESET}")
+            auth_login(args)
 
         elif args.auth_action == "status":
-
-            if config.get("id_token"):
-                print(f"\n{GREEN}[+] AUTHENTICATED{RESET}")
-                print("----------------------------------------")
-                print(f"Logged in as : {config.get('email')}")
-                print(f"User UID     : {config.get('uid')}")
-                print(f"Config File  : {CONFIG_FILE}")
-                print("----------------------------------------\n")
-
-            else:
-                print(
-                    "\n[-] NOT LOGGED IN. "
-                    "Run 'venta auth login' to authenticate.\n"
-                )
+            auth_status()
 
         elif args.auth_action == "logout":
-            clear_config()
-            print(f"\n{GREEN}[+] Logged out. Saved credentials cleared.{RESET}\n")
+            auth_logout()
 
-    # -----------------------------------------------------
-    # DB COMMANDS
-    # -----------------------------------------------------
+        else:
+            parser.parse_args(["auth", "--help"])
 
     elif args.subcommand == "db":
-
-        db_url = args.db_url or config.get("db_url")
-
-        if not db_url:
-            db_url = input(
-                "Enter Firebase DB URL: "
-            ).strip()
-
-            save_config({"db_url": db_url})
-
-        auth_token = args.auth or config.get("id_token")
-
-        clean_url = db_url.rstrip("/")
-        clean_path = args.path.strip("/")
-
-        endpoint = (
-            f"{clean_url}/{clean_path}.json"
-            if clean_path
-            else f"{clean_url}/.json"
-        )
-
-        if args.action == "get":
-            make_request(
-                endpoint,
-                method="GET",
-                auth=auth_token
-            )
-
-        elif args.action in ["set", "push"]:
-
-            if not args.data:
-                print(
-                    "[-] ERROR: '--data' argument required "
-                    "for 'set' or 'push'.",
-                    file=sys.stderr
-                )
-                sys.exit(1)
-
-            try:
-                data_dict = json.loads(args.data)
-
-            except json.JSONDecodeError:
-                print(
-                    f"{RED}[-] ERROR: Provided '--data' "
-                    "is not valid JSON.{RESET}",
-                    file=sys.stderr
-                )
-                sys.exit(1)
-
-            http_method = "PUT" if args.action == "set" else "POST"
-
-            make_request(
-                endpoint,
-                method=http_method,
-                data=data_dict,
-                auth=auth_token
-            )
-
-        elif args.action == "delete":
-            make_request(
-                endpoint,
-                method="DELETE",
-                auth=auth_token
-            )
-
-    # -----------------------------------------------------
-    # MESSAGING
-    # -----------------------------------------------------
+        db_command(args)
 
     elif args.subcommand == "messaging":
         messaging_menu()
